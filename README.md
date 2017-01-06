@@ -1,6 +1,8 @@
 # PHP Platform Annotations
 This package provides APIs to access annotations in PHP
 
+[![Build Status](https://travis-ci.org/PHPPlatform/annotations.svg?branch=master)](https://travis-ci.org/PHPPlatform/annotations)
+
 
 ## Usage
 
