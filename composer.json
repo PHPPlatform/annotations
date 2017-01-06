@@ -1,0 +1,32 @@
+{
+	"name" : "php-platform/annotations",
+	"type" : "library",
+	"keywords" : [
+		"annotations",
+		"php-platform"
+	],
+	"homepage" : "https://github.com/PHPPlatform/annotations",
+	"authors" : [{
+			"name" : "Raghavendra K R",
+			"email" : "krraghavendra@yahoo.co.in",
+			"homepage" : "http://krraghavendra.in",
+			"role" : "Software Developer"
+		}
+	],
+	"require" : {
+		"php" : "~5.3"
+	},
+	"require-dev" : {
+		"phpunit/phpunit" : "~4.8"
+	},
+	"autoload" : {
+		"psr-4" : {
+			"PhpPlatform\\" : "src/"
+		}
+	},
+	"autoload-dev" : {
+		"psr-4" : {
+			"PhpPlatform\\tests\\" : "tests/"
+		}
+	}
+}
