@@ -204,8 +204,13 @@ class Annotation{
      * " *@key value  "
      * " * @key value Description"
      * " * @key (value1,...)"
-     * " * @key(value1,...)"
      * " * @key "value with spaces" "
+     * " * @key.subkey"
+     * " * @key.subkey value "
+     * " *@key.subkey value  "
+     * " * @key.subkey value Description"
+     * " * @key.subkey (value1,...)"
+     * " * @key.subkey "value with spaces" "
      */
 
     static private function getAnnotationsFromDocComment($docComment,$type){
@@ -214,124 +219,18 @@ class Annotation{
 
         $annotations = array();
         foreach($docCommentLines as $docCommentLine){
-
-            if(strpos($docCommentLine,"@") === FALSE){
-                continue;
-            }
-
-            $tokens = token_get_all("<?php ".$docCommentLine);
-
-            // $tokens will be of form
-            // array(array(T_OPEN_TAG ,"<?php",0),
-            //       array(T_WHITESPACE," ",0),
-            //       "*",
-            //       array(T_WHITESPACE," ",0),  // this token is optional
-            //       "@",
-            //       array(T_STRING,{annotationName},0),
-            //       array(T_WHITESPACE," ",0),  // this token is optional
-            //       {annotationValue} | array(T_STRING,{annotationValue},0) | array(T_CONSTANT_ENCAPSED_STRING ,{annotationValue},0) | array(T_LNUMBER ,{annotationValue},0) | array(T_DNUMBER ,{annotationValue},0) | "(",
-            //           {annotationValue} | array(T_STRING,{annotationValue},0) | array(T_CONSTANT_ENCAPSED_STRING ,{annotationValue},0) | array(T_LNUMBER ,{annotationValue},0) | array(T_DNUMBER ,{annotationValue},0) | ","  // if previous token is "("
-            //       ")",
-            //       // rest of the tokens can be ignored
-            //   )
-
-            if($tokens[2] !== "*"){
-                continue;
-            }
-
-            $annotationNameTokenIndex = 4;
-            if(is_array($tokens[3]) && $tokens[3][0] == T_WHITESPACE){
-                $annotationNameTokenIndex = 5;
-            }
-
-            // @ is not the prefix of annotationName , OR
-            // if annotationName is not a string , OR
-            // if count of tokens is less , then this line does not contain annotations
-            if($tokens[$annotationNameTokenIndex-1] != "@" ||
-                !(is_array($tokens[$annotationNameTokenIndex]) && $tokens[$annotationNameTokenIndex][0] == T_STRING)){
-                continue;
-            }
-
-            $annotationName = $tokens[$annotationNameTokenIndex][1];
-
-            $annotationValue = null;
-            $hasSpaceBetweenNameAndValue = false;
-            $errorInParsing = false;
-
-            for($i = $annotationNameTokenIndex+1 ; $i<count($tokens);$i++){
-                $token = $tokens[$i];
-
-                if(is_string($token)){
-                    if($annotationValue === null){
-                        if($token == "("){
-                            $annotationValue = array();
-                            continue;
-                        }else{
-                            if($hasSpaceBetweenNameAndValue){
-                                $annotationValue = $token;
-                                break;
-                            }else{
-                                //error
-                                $errorInParsing = true; break;
-                            }
-                        }
-                    }else{
-                        if($token == "," && count($annotationValue) > 0){
-                            continue;
-                        }else if($token == ")"){
-                            break;
-                        }else{
-                            //error
-                            $errorInParsing = true; break;
-                        }
-                    }
-                }else{
-                    if($token[0] == T_CONSTANT_ENCAPSED_STRING){
-                        $token[1] = stripcslashes($token[1]);
-                        $token[1] = substr($token[1],1,strlen($token[1])-2);
-                    }
-
-                    if($annotationValue === null){
-                        if($token[0] == T_WHITESPACE){
-                            $hasSpaceBetweenNameAndValue = true;
-                            continue;
-                        }else{
-                            if($hasSpaceBetweenNameAndValue){
-                                $annotationValue = $token[1];
-                                break;
-                            }else{
-                                //error
-                                $errorInParsing = true; break;
-                            }
-                        }
-                    }else{
-                        if($token[0] == T_WHITESPACE){
-                            continue;
-                        }else{
-                            $annotationValue[] = $token[1];
-                        }
-                    }
-
+            try{
+                $keysAndValues = self::getKeysAndValues($docCommentLine);
+                $_annotations = $keysAndValues['values'];
+                $keys = $keysAndValues['keys'];
+                $keysCount = count($keys);
+                for($i = $keysCount -1 ; $i >= 0 ; $i--){
+                    $_annotations = [$keys[$i] => $_annotations];
                 }
+                $annotations = array_merge_recursive($annotations,$_annotations);
+            }catch (\Exception $e){
+                // dont do anything
             }
-
-            if($errorInParsing){
-                continue;
-            }
-
-            if(is_numeric($annotationValue)){
-                $annotationValue = 0 + $annotationValue;
-            }
-
-            if(is_string($annotationValue) && strtoupper($annotationValue) == "TRUE"){
-                $annotationValue = true;
-            }
-
-            if(is_string($annotationValue) && strtoupper($annotationValue) == "FALSE"){
-                $annotationValue = false;
-            }
-
-            $annotations[$annotationName] = $annotationValue;
         }
 
         if(count($annotations) > 0){
@@ -339,6 +238,117 @@ class Annotation{
         }else{
             return FALSE;
         }
+    }
+    
+    /**
+     * This method returns the keys and values in the doc comment line
+     * @param string $docCommentLine
+     * @return array
+     * @throws \Exception if keys and/value can not be extracted
+     */
+    static private function getKeysAndValues($docCommentLine){
+        
+        if(strpos($docCommentLine,"@") === FALSE){
+            throw new \Exception('Parse Error');
+        }
+        
+        $posAmp = strpos($docCommentLine, '@');
+        $strBeforeAmp = substr($docCommentLine, 0, $posAmp);
+        if(trim($strBeforeAmp) != "*") throw new \Exception('Parse Error');
+        
+        $docCommentLine = substr($docCommentLine, $posAmp+1);
+        
+        $posFirstSpace = strpos($docCommentLine, ' ');
+        $keyStr = $posFirstSpace !== FALSE ? substr($docCommentLine, 0, $posFirstSpace) : $docCommentLine;
+        
+        if(trim($keyStr) == '') throw new \Exception('Parse Error');
+        
+        if(strpos($keyStr, '(') !== FALSE) throw new \Exception('Parse Error');
+        
+        $keys = preg_split('/\./', trim($keyStr));
+        
+        $valueStr = trim(substr($docCommentLine, strlen($keyStr)));
+        
+        if(strlen($valueStr) == 0){
+            // default value is true
+            $valueStr = "true";
+        }
+        
+        $valueIsInBracket = false;
+        if(strpos($valueStr, '(') === 0){
+            $valueIsInBracket = true;
+            $valueStr = substr($valueStr, 1);
+        }
+        
+        $values = [];
+        $valueChars = str_split($valueStr);
+        $valueStrLength = strlen($valueStr);
+        $charStack = [];
+        $stringInQuotes = false;
+        $escapedChar = false;
+        for($i = 0; $i < $valueStrLength; $i++){
+            $char = $valueChars[$i];
+            
+            if($stringInQuotes){
+                if($escapedChar){
+                    $charStack[] = $char;
+                    $escapedChar = false;
+                }else if ($char == '"'){
+                    // end the string
+                    $values[] = join('', $charStack);
+                    $charStack = [];
+                    $stringInQuotes = false;
+                }else if ($char ==  '\\'){
+                    $escapedChar = true;
+                }else{
+                    $charStack[] = $char;
+                }
+            }else if ($char ==  '"'){
+                if(count($charStack) > 0) throw new \Exception('Parse Error');
+                $stringInQuotes = true;
+            }else if ($char == ',' || $char == ' '){
+                if(count($charStack) > 0){
+                    $values[] = join('', $charStack);
+                    $charStack = [];
+                }
+            }else if ($valueIsInBracket && $char == ')'){
+                if(count($charStack) > 0){
+                    $values[] = join('', $charStack);
+                    $charStack = [];
+                    break;
+                }
+            }else{
+                $charStack[] = $char;
+            }
+        }
+        if(count($charStack) > 0){
+            $values[] = join('', $charStack);
+            $charStack = [];
+        }
+        
+        foreach ($values as $i => $value){
+            if(is_numeric($value)){
+                $values[$i] = 0 + $value;
+            }
+            
+            if(is_string($value) && strtoupper($value) == "TRUE"){
+                $values[$i] = true;
+            }
+            
+            if(is_string($value) && strtoupper($value) == "FALSE"){
+                $values[$i] = false;
+            }
+        }
+        
+        if(!$valueIsInBracket && count($values) ==  1){
+            $values = $values[0];
+        }
+        
+        return [
+            "keys" => $keys,
+            "values" => $values
+        ];
+        
     }
 
 }
